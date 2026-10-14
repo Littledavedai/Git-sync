@@ -1,0 +1,18 @@
+# ---- 个人配置（含本地路径与远端地址，绝不提交）----
+repos.json
+repos.local.json
+
+# ---- 日志与缓存 ----
+*.log
+__pycache__/
+*.pyc
+
+# ---- 临时 / 截图 ----
+_*.png
+_*.json
+_*.py
+界面预览.png
+
+# ---- 编辑器 ----
+.vscode/
+.idea/

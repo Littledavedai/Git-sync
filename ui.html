@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>git-sync · 一键双推</title>
+<style>
+  :root{
+    --bg:#f4f6f8; --card:#fff; --border:#e3e8ee; --border-strong:#d3dae3;
+    --text:#16202c; --muted:#6b7a8d; --faint:#9aa8b8;
+    --primary:#2f6feb; --primary-soft:#eaf1fe; --primary-dark:#2559c9;
+    --ok:#1a7f4b; --ok-soft:#e8f6ee;
+    --warn:#b7791f; --warn-soft:#fdf4e3;
+    --err:#d1382c; --err-soft:#fdecea;
+    --radius:12px; --radius-sm:8px;
+    --shadow:0 1px 2px rgba(16,24,40,.04), 0 1px 3px rgba(16,24,40,.06);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    background:var(--bg); color:var(--text); font-size:14px;
+    -webkit-font-smoothing:antialiased; overflow:hidden;
+  }
+  button{font-family:inherit; font-size:inherit; cursor:pointer; border:none; background:none; color:inherit;}
+  input{font-family:inherit; font-size:inherit;}
+  ::-webkit-scrollbar{width:9px; height:9px;}
+  ::-webkit-scrollbar-thumb{background:#cfd8e3; border-radius:6px;}
+  ::-webkit-scrollbar-thumb:hover{background:#b6c2d1;}
+  ::-webkit-scrollbar-track{background:transparent;}
+
+  /* ---------- layout ---------- */
+  .app{display:flex; flex-direction:column; height:100vh;}
+
+  header{
+    display:flex; align-items:center; gap:12px;
+    padding:0 20px; height:60px; background:var(--card);
+    border-bottom:1px solid var(--border); flex:0 0 auto;
+  }
+  .logo{
+    width:32px; height:32px; border-radius:9px; flex:0 0 auto;
+    background:linear-gradient(135deg,#2f6feb,#5b9cff);
+    display:flex; align-items:center; justify-content:center;
+    color:#fff; font-weight:700; font-size:15px; letter-spacing:-.5px;
+  }
+  .brand{display:flex; flex-direction:column; line-height:1.25;}
+  .brand b{font-size:15px; font-weight:650;}
+  .brand span{font-size:11.5px; color:var(--faint);}
+  .spacer{flex:1;}
+  .pill{
+    display:inline-flex; align-items:center; gap:6px;
+    padding:5px 11px; border-radius:999px; font-size:12px;
+    background:var(--ok-soft); color:var(--ok); font-weight:550;
+  }
+  .pill i{width:6px; height:6px; border-radius:50%; background:currentColor; display:block;}
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:6px;
+    padding:8px 14px; border-radius:var(--radius-sm);
+    border:1px solid var(--border-strong); background:var(--card);
+    color:var(--text); font-weight:550; transition:.15s;
+  }
+  .btn:hover{background:#f7f9fc; border-color:#c2ccd9;}
+  .btn:active{transform:translateY(1px);}
+  .btn.primary{background:var(--primary); border-color:var(--primary); color:#fff;}
+  .btn.primary:hover{background:var(--primary-dark); border-color:var(--primary-dark);}
+  .btn.ghost{border-color:transparent; background:transparent; color:var(--muted);}
+  .btn.ghost:hover{background:#eef2f7; color:var(--text);}
+  .btn.danger{color:var(--err); border-color:#f2cfcb; background:#fff;}
+  .btn.danger:hover{background:var(--err-soft);}
+  .btn:disabled{opacity:.5; cursor:not-allowed; transform:none;}
+  .btn.sm{padding:5px 10px; font-size:12.5px;}
+
+  main{display:flex; flex:1; min-height:0; position:relative;}
+
+  /* 侧栏底部：新增 + 收起 */
+  .side-foot{
+    display:flex; gap:8px; align-items:center;
+    padding:10px 12px; border-top:1px solid var(--border); flex:0 0 auto;
+  }
+  /* 收起后浮在左上角的展开按钮 */
+  .side-expand{
+    display:none; position:absolute; left:10px; top:10px; z-index:6;
+    width:30px; height:30px; border-radius:9px;
+    border:1px solid var(--border-strong); background:var(--card);
+    box-shadow:var(--shadow); font-size:11px; color:var(--muted);
+    align-items:center; justify-content:center; transition:.14s;
+  }
+  .side-expand:hover{color:var(--text); background:#f7f9fc;}
+  .app.side-collapsed .side-expand{display:flex;}
+
+  /* ---------- left ---------- */
+  .side{
+    width:330px; flex:0 0 auto; display:flex; flex-direction:column;
+    background:var(--card); border-right:1px solid var(--border); min-height:0;
+  }
+  .side-head{
+    display:flex; align-items:center; gap:8px;
+    padding:14px 16px 10px; flex:0 0 auto;
+  }
+  .side-head h2{font-size:13px; font-weight:650; letter-spacing:.2px;}
+  .count{
+    font-size:11.5px; color:var(--faint); background:#eef2f7;
+    padding:2px 7px; border-radius:999px;
+  }
+  .side-tools{display:flex; gap:6px; padding:0 12px 10px; flex:0 0 auto;}
+  .repo-list{flex:1; overflow-y:auto; padding:0 10px 10px; min-height:0;}
+  .repo{
+    display:flex; gap:10px; align-items:flex-start;
+    padding:11px 12px; border-radius:10px; border:1px solid transparent;
+    cursor:pointer; margin-bottom:4px; transition:.13s; position:relative;
+  }
+  .repo:hover{background:#f7f9fc;}
+  .repo.active{background:var(--primary-soft); border-color:#c9dcfb;}
+  .repo .chk{
+    appearance:none; -webkit-appearance:none; flex:0 0 auto;
+    width:16px; height:16px; margin-top:2px; border-radius:5px;
+    border:1.5px solid var(--border-strong); background:#fff;
+    cursor:pointer; transition:.13s; position:relative;
+  }
+  .repo .chk:checked{background:var(--primary); border-color:var(--primary);}
+  .repo .chk:checked::after{
+    content:""; position:absolute; left:4.5px; top:1.5px;
+    width:4px; height:8px; border:solid #fff; border-width:0 2px 2px 0;
+    transform:rotate(45deg);
+  }
+  /* 列表项上的删除按钮（悬停出现） */
+  .repo-del{
+    flex:0 0 auto; width:24px; height:24px; border-radius:6px;
+    display:flex; align-items:center; justify-content:center;
+    color:var(--faint); font-size:13px; opacity:0; transition:.14s;
+    margin-top:1px;
+  }
+  .repo:hover .repo-del{opacity:1;}
+  .repo-del:hover{background:var(--err-soft); color:var(--err);}
+
+  /* 侧栏收起 */
+  .side{transition:width .18s ease;}
+  .app.side-collapsed .side{width:0; min-width:0; border-right:none; overflow:hidden;}
+  .app.side-collapsed .content{padding-left:26px;}
+  .repo-main{flex:1; min-width:0;}
+  .repo-name{
+    font-weight:600; font-size:13.5px; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; display:flex; align-items:center; gap:6px;
+  }
+  .repo-path{
+    font-size:11.5px; color:var(--faint); white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; margin-top:2px;
+    font-family:Consolas,"Cascadia Mono",monospace;
+  }
+  .repo-meta{display:flex; gap:6px; align-items:center; margin-top:6px; flex-wrap:wrap;}
+  .tag{
+    font-size:11px; padding:2px 7px; border-radius:5px;
+    background:#eef2f7; color:var(--muted);
+    font-family:Consolas,"Cascadia Mono",monospace;
+  }
+  .tag.gh{background:#eef4ff; color:#3355c9;}
+  .tag.gl{background:#fdf0e8; color:#b4622a;}
+  .dot{width:7px; height:7px; border-radius:50%; flex:0 0 auto;}
+  .dot.on{background:#22b573;} .dot.off{background:#e06158;} .dot.unk{background:#c3ced9;}
+  .empty{
+    text-align:center; color:var(--faint); font-size:13px;
+    padding:40px 20px; line-height:1.7;
+  }
+
+  /* ---------- right ---------- */
+  .content{flex:1; overflow-y:auto; padding:18px 22px 30px; min-width:0;}
+  .card{
+    background:var(--card); border:1px solid var(--border);
+    border-radius:var(--radius); box-shadow:var(--shadow);
+    margin-bottom:16px; overflow:hidden;
+  }
+  .card-head{
+    display:flex; align-items:center; gap:10px;
+    padding:13px 18px; border-bottom:1px solid var(--border);
+  }
+  .card-head h3{font-size:13.5px; font-weight:650;}
+  .card-head .spacer{flex:1;}
+  .card-body{padding:18px;}
+
+  .grid{display:grid; grid-template-columns:1fr 1fr; gap:14px 16px;}
+  .field{display:flex; flex-direction:column; gap:6px; min-width:0;}
+  .field.full{grid-column:1/-1;}
+  .field label{font-size:12px; color:var(--muted); font-weight:550;}
+  .field label .req{color:var(--err); margin-left:2px;}
+  .field label .hint{color:var(--faint); font-weight:400; margin-left:5px; font-size:11.5px;}
+  .input{
+    width:100%; padding:9px 11px; border-radius:var(--radius-sm);
+    border:1px solid var(--border-strong); background:#fff; color:var(--text);
+    transition:.14s; outline:none;
+  }
+  .input:hover{border-color:#c2ccd9;}
+  .input:focus{border-color:var(--primary); box-shadow:0 0 0 3px rgba(47,111,235,.13);}
+  .input.mono{font-family:Consolas,"Cascadia Mono",monospace; font-size:12.5px;}
+  .row{display:flex; gap:8px;}
+  .row .input{flex:1;}
+
+  .validate-strip{
+    display:flex; align-items:center; gap:8px; margin-top:10px;
+    font-size:12.5px; padding:9px 12px; border-radius:var(--radius-sm);
+    background:#f7f9fc; color:var(--muted);
+  }
+  .validate-strip.ok{background:var(--ok-soft); color:var(--ok);}
+  .validate-strip.warn{background:var(--warn-soft); color:var(--warn);}
+  .validate-strip.err{background:var(--err-soft); color:var(--err);}
+
+  /* target picker */
+  .targets{display:flex; flex-direction:column; gap:10px;}
+  .seg{display:flex; gap:8px; flex-wrap:wrap;}
+  .seg-btn{
+    padding:8px 14px; border-radius:var(--radius-sm);
+    border:1px solid var(--border-strong); background:#fff;
+    color:var(--muted); font-weight:550; transition:.14s;
+  }
+  .seg-btn:hover{border-color:#c2ccd9; color:var(--text);}
+  .seg-btn.on{background:var(--primary); border-color:var(--primary); color:#fff;}
+  .target-list{display:flex; gap:10px; flex-wrap:wrap; margin-top:2px;}
+  .target{
+    display:flex; align-items:center; gap:9px;
+    padding:11px 14px; border-radius:10px; border:1.5px solid var(--border-strong);
+    background:#fff; cursor:pointer; transition:.14s; min-width:150px;
+  }
+  .target:hover{border-color:#c2ccd9;}
+  .target.on{border-color:var(--primary); background:var(--primary-soft);}
+  .target input{
+    appearance:none; -webkit-appearance:none; width:17px; height:17px;
+    border-radius:5px; border:1.5px solid var(--border-strong);
+    background:#fff; position:relative; transition:.13s; flex:0 0 auto;
+  }
+  .target.on input{background:var(--primary); border-color:var(--primary);}
+  .target.on input::after{
+    content:""; position:absolute; left:5px; top:1.5px; width:4px; height:9px;
+    border:solid #fff; border-width:0 2px 2px 0; transform:rotate(45deg);
+  }
+  .target-txt{display:flex; flex-direction:column; line-height:1.3;}
+  .target-txt b{font-size:13px; font-weight:600;}
+  .target-txt span{font-size:11px; color:var(--faint); font-family:Consolas,monospace;}
+
+  .opt-row{display:flex; align-items:center; gap:9px; margin-top:12px; font-size:13px; color:var(--muted);}
+  .opt-row input{width:16px; height:16px; accent-color:var(--primary);}
+
+  .actions{display:flex; align-items:center; gap:12px; margin-top:16px; padding-top:16px; border-top:1px dashed var(--border);}
+  .actions .spacer{flex:1;}
+  .big{padding:11px 26px; font-size:14px; font-weight:600;}
+
+  /* log */
+  .log{
+    font-family:Consolas,"Cascadia Mono","Courier New",monospace;
+    font-size:12.5px; line-height:1.65; background:#f8fafc;
+    border-radius:var(--radius-sm); padding:14px 16px;
+    height:300px; overflow-y:auto; white-space:pre-wrap; word-break:break-all;
+    color:#3d4c5c; border:1px solid var(--border);
+  }
+  .log .l-info{color:#4a5a6b;} .log .l-ok{color:var(--ok); font-weight:600;}
+  .log .l-warn{color:var(--warn);} .log .l-err{color:var(--err);}
+  .log .l-head{color:var(--primary); font-weight:650;}
+  .log-empty{color:var(--faint); font-family:system-ui,sans-serif;}
+
+  /* remote status */
+  .rm-block{margin-top:14px; padding-top:14px; border-top:1px dashed var(--border);}
+  .rm-title{font-size:12px; font-weight:600; color:var(--muted); margin-bottom:8px;}
+  .rm-row{display:flex; gap:10px; align-items:flex-start; padding:9px 0;
+          border-bottom:1px dashed var(--border);}
+  .rm-row:last-child{border-bottom:none; padding-bottom:0;}
+  .rm-tag{flex:0 0 76px; font-size:12px; font-weight:600; color:var(--muted); padding-top:1px;}
+  .rm-tag.gh{color:#3355c9;} .rm-tag.gl{color:#b4622a;}
+  .rm-body{flex:1; min-width:0;}
+  .rm-sha{font-family:Consolas,"Cascadia Mono",monospace; font-size:12.5px;
+          color:var(--text); font-weight:600; display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
+  .rm-sub{font-size:12px; color:var(--muted); margin-top:3px; overflow:hidden;
+          text-overflow:ellipsis; white-space:nowrap;}
+  .rm-none{font-size:12.5px; color:var(--warn);}
+  .rm-err{font-size:12px; color:var(--err); word-break:break-all; line-height:1.6;}
+  .rm-empty{font-size:12.5px; color:var(--faint);}
+  .rm-url{font-size:11px; color:var(--faint); font-family:Consolas,monospace;
+          margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .rm-alert{background:var(--err-soft); color:var(--err); border:1px solid #f2cfcb;
+            border-radius:8px; padding:10px 12px; font-size:12.5px; line-height:1.7;
+            margin-bottom:12px;}
+  .rm-badge{display:inline-block; font-size:11px; padding:1px 7px; border-radius:4px;
+            font-weight:500;}
+  .rm-badge.new{background:var(--warn-soft); color:var(--warn);}
+  .rm-badge.same{background:var(--ok-soft); color:var(--ok);}
+  .rm-badge.diff{background:var(--err-soft); color:var(--err);}
+  .rm-badge.local{background:#eef2f7; color:var(--muted);}
+
+  .pull-row{display:flex; gap:10px; flex-wrap:wrap;}
+  .pull-note{font-size:12px; color:var(--faint); line-height:1.7; margin-top:10px;}
+
+  .toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:#16202c; color:#fff; padding:11px 20px; border-radius:10px;
+    font-size:13px; opacity:0; pointer-events:none; transition:.25s;
+    box-shadow:0 8px 24px rgba(16,24,40,.2); z-index:99;
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+  .toast.err{background:#b3271d;} .toast.ok{background:#166f43;}
+
+  .center-empty{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    height:100%; color:var(--faint); gap:14px; text-align:center;
+  }
+  .center-empty .ico{
+    width:56px; height:56px; border-radius:16px; background:#e9eff6;
+    display:flex; align-items:center; justify-content:center; font-size:24px;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">gs</div>
+    <div class="brand">
+      <b>git-sync</b>
+      <span>一键推送到 GitHub 与本地 GitLab</span>
+    </div>
+    <div class="spacer"></div>
+    <span class="pill"><i></i>服务运行中</span>
+    <button class="btn ghost sm" onclick="shutdown()" title="关闭本地服务">退出</button>
+  </header>
+
+  <main>
+    <!-- 左：仓库列表 -->
+    <aside class="side">
+      <div class="side-head">
+        <h2>仓库</h2>
+        <span class="count" id="repoCount">0</span>
+      </div>
+      <div class="repo-list" id="repoList"></div>
+      <div class="side-foot">
+        <button class="btn sm" style="flex:1" onclick="addRepo()">＋ 新增仓库</button>
+        <button class="btn ghost sm" onclick="toggleSide()" title="收起左侧列表" style="flex:0 0 auto">◀</button>
+      </div>
+    </aside>
+
+    <!-- 侧栏收起后，浮在左上角的展开按钮 -->
+    <button class="side-expand" onclick="toggleSide()" title="展开左侧列表">▶</button>
+
+    <!-- 右：设置 + 校验 + 推送/拉取 + 日志 -->
+    <section class="content" id="content"></section>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const S = {
+  repos: [],
+  selected: -1,
+  dirty: false,
+  pushing: false,
+  status: {},       // 每个仓库的校验结果
+  remote: {},       // 每个仓库的远端查询结果
+  checked: new Set(), // 勾选要推送的仓库（索引）
+  targets: new Set(["github","gitlab"]),
+};
+
+const TARGET_META = {
+  github: {label:"GitHub",  sub:"github.com"},
+  gitlab: {label:"GitLab",  sub:"自建 Git 服务"},
+};
+
+/* ---------------- 基础 ---------------- */
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function toast(msg, kind){
+  const t=document.getElementById("toast");
+  t.textContent=msg; t.className="toast show"+(kind?" "+kind:"");
+  clearTimeout(t._t); t._t=setTimeout(()=>t.className="toast",2200);
+}
+
+/* ---------------- 数据 ---------------- */
+async function loadState(){
+  try{
+    const r=await fetch("/api/state"); const d=await r.json();
+    S.repos=d.repos||[];
+    S.git=d.git||{};
+    renderGitBanner();
+    if(S.selected<0 && S.repos.length) S.selected=0;
+    renderList(); renderContent();
+    S.repos.forEach((_,i)=>refreshStatus(i));
+  }catch(e){ toast("加载失败："+e.message,"err"); }
+}
+
+function renderGitBanner(){
+  const old=document.getElementById("gitBanner");
+  if(old) old.remove();
+  const g=S.git||{};
+  if(g.available) return;
+  const b=document.createElement("div");
+  b.id="gitBanner";
+  b.style.cssText="background:#fdecea;color:#d1382c;padding:10px 20px;font-size:13px;"+
+                  "border-bottom:1px solid #f2cfcb;line-height:1.6";
+  b.textContent="⚠ 找不到可用的 git 命令，推送和校验都无法工作。已尝试："+
+                (g.exe||"git")+"　请安装 Git 后重新打开。";
+  const app=document.querySelector(".app");
+  app.insertBefore(b, document.querySelector("main"));
+}
+
+async function saveRepos(silent){
+  try{
+    const r=await fetch("/api/save",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({repos:S.repos})});
+    const d=await r.json();
+    if(d.error) throw new Error(d.error);
+    S.dirty=false;
+    if(!silent) toast("已保存","ok");
+    renderList(); renderContent();
+    return true;
+  }catch(e){ toast("保存失败："+e.message,"err"); return false; }
+}
+
+async function refreshStatus(i){
+  const repo=S.repos[i]; if(!repo) return;
+  try{
+    const r=await fetch("/api/validate",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(repo)});
+    S.status[i]=await r.json();
+  }catch(e){ S.status[i]={exists:false,message:"校验失败"}; }
+  updateStatusUi(i);
+  // 若正好在看这个仓库，右侧提示条同步刷新
+  if(S.selected===i) paintValidate(S.status[i]);
+}
+
+function updateStatusUi(i){
+  const el=document.querySelector('.repo[data-i="'+i+'"] .dot');
+  if(!el) return;
+  const st=S.status[i]||{};
+  let cls="unk";
+  if(st.exists && st.isGit && !st.message.startsWith("本地无分支")) cls = st.dirty?"off":"on";
+  else if(st.exists===false) cls="off";
+  el.className="dot "+cls;
+}
+
+/* ---------------- 渲染：左栏 ---------------- */
+function renderList(){
+  const box=document.getElementById("repoList");
+  if(!S.repos.length){
+    box.innerHTML='<div class="empty">还没有登记仓库<br>点下方「＋ 新增仓库」开始</div>';
+    updateAllBtn();
+    return;
+  }
+  box.innerHTML=S.repos.map((r,i)=>{
+    const local=r.branch||"main";
+    const gh=r.github_branch||local, gl=r.gitlab_branch||local;
+    const st=S.status[i]||{};
+    const dotCls = st.exists===undefined ? "unk" : (st.exists && st.isGit ? (st.dirty?"off":"on") : "off");
+    const active = i===S.selected ? " active":"";
+    return `<div class="repo${active}" data-i="${i}" onclick="selectRepo(${i},event)">
+      <div class="repo-main">
+        <div class="repo-name"><span class="dot ${dotCls}"></span>${esc(r.name||"未命名")}</div>
+        <div class="repo-path" title="${esc(r.path||"")}">${esc(r.path||"未填写路径")}</div>
+        <div class="repo-meta">
+          <span class="tag gh">GH ${esc(gh)}</span>
+          <span class="tag gl">GL ${esc(gl)}</span>
+        </div>
+      </div>
+      <button class="repo-del" title="移除这个仓库" onclick="event.stopPropagation();delRepo(${i})">✕</button>
+    </div>`;
+  }).join("");
+  updateAllBtn();
+}
+
+function selectRepo(i,ev){
+  S.selected=i; renderList(); renderContent();
+}
+
+// 推送 / 拉取都作用于「当前选中的仓库」
+function selectedIndexes(){
+  return (S.selected>=0 && S.selected<S.repos.length) ? [S.selected] : [];
+}
+
+function toggleSide(){
+  const on=document.querySelector(".app").classList.toggle("side-collapsed");
+  try{ localStorage.setItem("gs_side_collapsed", on?"1":"0"); }catch(e){}
+}
+
+function updateAllBtn(){
+  const el=document.getElementById("repoCount");
+  if(el) el.textContent = S.repos.length ? String(S.repos.length) : "0";
+}
+
+/* ---------------- 渲染：右栏 ---------------- */
+function renderContent(){
+  const c=document.getElementById("content");
+  const i=S.selected;
+  if(i<0 || !S.repos[i]){
+    c.innerHTML=`<div class="center-empty">
+      <div class="ico">📦</div>
+      <div>从左边选择一个仓库<br>或点「＋ 新增仓库」</div>
+    </div>`;
+    return;
+  }
+  const r=S.repos[i];
+  const local=r.branch||"main";
+
+  c.innerHTML=`
+    <div class="card">
+      <div class="card-head">
+        <h3>仓库设置</h3>
+        <div class="spacer"></div>
+        <button class="btn ghost sm" onclick="openDir(${i})">打开目录</button>
+        <button class="btn danger sm" onclick="delRepo(${i})">删除</button>
+      </div>
+      <div class="card-body">
+        <div class="grid">
+          <div class="field">
+            <label>显示名称</label>
+            <input class="input" id="f_name" value="${esc(r.name||"")}" placeholder="例如：我的项目" oninput="edit(${i},'name',this.value)">
+          </div>
+          <div class="field">
+            <label>本地分支 <span class="hint">要推送的源分支</span></label>
+            <input class="input mono" id="f_branch" value="${esc(local)}" placeholder="main" oninput="edit(${i},'branch',this.value)">
+          </div>
+          <div class="field full">
+            <label>本地仓库目录 <span class="req">*</span><span class="hint">必须是含 .git 的目录</span></label>
+            <input class="input mono" id="f_path" value="${esc(r.path||"")}" placeholder="D:/code/my-project" oninput="edit(${i},'path',this.value)">
+          </div>
+          <div class="field full">
+            <label>GitHub 仓库地址 <span class="req">*</span></label>
+            <input class="input mono" id="f_github" value="${esc(r.github||"")}" placeholder="https://github.com/用户名/仓库.git" oninput="edit(${i},'github',this.value)">
+          </div>
+          <div class="field full">
+            <label>GitLab 仓库地址 <span class="req">*</span></label>
+            <input class="input mono" id="f_gitlab" value="${esc(r.gitlab||"")}" placeholder="http://git.mycompany.com/组/仓库.git" oninput="edit(${i},'gitlab',this.value)">
+          </div>
+          <div class="field">
+            <label>GitHub 分支名 <span class="hint">留空 = 同本地</span></label>
+            <input class="input mono" id="f_ghb" value="${esc(r.github_branch||"")}" placeholder="${esc(local)}" oninput="editOpt(${i},'github_branch',this.value)">
+          </div>
+          <div class="field">
+            <label>GitLab 分支名 <span class="hint">留空 = 同本地</span></label>
+            <input class="input mono" id="f_glb" value="${esc(r.gitlab_branch||"")}" placeholder="${esc(local)}" oninput="editOpt(${i},'gitlab_branch',this.value)">
+          </div>
+          <div class="field full" id="urlWarnBox"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>校验</h3>
+        <div class="spacer"></div>
+        <button class="btn primary sm" onclick="validateNow(${i})" id="valBtn">开始校验</button>
+      </div>
+      <div class="card-body">
+        <div class="validate-strip" id="valStrip">点右上「开始校验」，一次检查本地与远端</div>
+        <div class="rm-block">
+          <div class="rm-title">本地 / GitHub / GitLab 对照</div>
+          <div id="remoteBox">${renderRemote(i)}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>推送到哪里</h3></div>
+      <div class="card-body">
+        <div class="seg" style="margin-bottom:12px">
+          <button class="seg-btn" onclick="setTargets('both')">两边都传</button>
+          <button class="seg-btn" onclick="setTargets('github')">只传 GitHub</button>
+          <button class="seg-btn" onclick="setTargets('gitlab')">只传 GitLab</button>
+        </div>
+        <div class="target-list">
+          ${["github","gitlab"].map(t=>`
+            <label class="target ${S.targets.has(t)?'on':''}" id="tg_${t}">
+              <input type="checkbox" ${S.targets.has(t)?'checked':''} onchange="toggleTarget('${t}',this.checked)">
+              <span class="target-txt"><b>${TARGET_META[t].label}</b><span>${TARGET_META[t].sub}</span></span>
+            </label>`).join("")}
+        </div>
+        <div class="opt-row">
+          <input type="checkbox" id="optCheck" ${window._checkOnly?'checked':''} onchange="window._checkOnly=this.checked">
+          <label for="optCheck">只检查一致性，不实际推送</label>
+        </div>
+        <div class="actions">
+          <span style="font-size:12.5px;color:var(--faint)" id="selInfo"></span>
+          <div class="spacer"></div>
+          ${S.dirty?'<span style="font-size:12.5px;color:var(--warn)">有未保存的改动</span>':''}
+          <button class="btn" onclick="saveRepos()" ${S.dirty?'':'disabled'}>保存</button>
+          <button class="btn primary big" id="pushBtn" onclick="doPush()">开始推送</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h3>从远端拉取到本地</h3></div>
+      <div class="card-body">
+        <div class="pull-row">
+          <button class="btn" onclick="doPull('github')" id="pullGh">◀ 从 GitHub 拉取</button>
+          <button class="btn" onclick="doPull('gitlab')" id="pullGl">◀ 从 GitLab 拉取</button>
+        </div>
+        <div class="opt-row">
+          <input type="checkbox" id="optForce" ${window._force?'checked':''} onchange="window._force=this.checked">
+          <label for="optForce">强制覆盖本地（丢弃本地未提交改动 / 领先的提交）</label>
+        </div>
+        <div class="pull-note">
+          默认保护本地：本地有未提交改动、或与远端已分叉时会停下并说明原因，不会悄悄覆盖你的代码。
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>运行日志</h3>
+        <div class="spacer"></div>
+        <button class="btn ghost sm" onclick="clearLog()">清空</button>
+      </div>
+      <div class="card-body">
+        <div class="log" id="log">${LOG.length
+          ? LOG.map(o=>`<div class="l-${o.level}">${o.text===""?" ":esc(o.text)}</div>`).join("")
+          : '<span class="log-empty">推送结果会显示在这里…</span>'}</div>
+      </div>
+    </div>`;
+
+  updateSelInfo();
+  updateUrlWarn();
+  if(S.status[i]) paintValidate(S.status[i]);
+}
+
+/* ---------------- 远端地址重复检查 ---------------- */
+function normUrl(u){
+  if(!u) return "";
+  let s=String(u).trim().toLowerCase().replace(/\\/g,"/");
+  s=s.replace(/\/+$/,"").replace(/\.git$/,"");
+  s=s.replace(/^(https?|ssh|git):\/\//,"");
+  const seg=s.split("/");
+  if(seg[0] && seg[0].indexOf("@")>=0) s=s.slice(seg[0].indexOf("@")+1);
+  if(s.indexOf("/")<0 && s.indexOf(":")>=0) s=s.replace(":","/");
+  return s.replace(/\/+$/,"");
+}
+function updateUrlWarn(){
+  const box=document.getElementById("urlWarnBox");
+  if(!box) return;
+  const r=S.repos[S.selected];
+  if(!r){ box.innerHTML=""; return; }
+  const a=normUrl(r.github), b=normUrl(r.gitlab);
+  box.innerHTML = (a && b && a===b)
+    ? '<div class="rm-alert" style="margin:0">⚠ <b>GitHub 和 GitLab 填的是同一个地址</b>，两边指向同一个仓库。'
+      + '请改掉其中一个，否则推送会把代码推两遍到同一个地方，真正的 GitLab 收不到东西。</div>'
+    : '';
+}
+
+/* ---------------- 编辑 ---------------- */
+function edit(i,key,val){ S.repos[i][key]=val; S.dirty=true; syncSaveBtn(); onFieldChange(); }
+function editOpt(i,key,val){
+  if(val.trim()) S.repos[i][key]=val.trim(); else delete S.repos[i][key];
+  S.dirty=true; syncSaveBtn(); onFieldChange();
+}
+function onFieldChange(){
+  const r=S.repos[S.selected];
+  const ghb=document.getElementById("f_ghb"), glb=document.getElementById("f_glb");
+  const local=(r&&r.branch)||"main";
+  if(ghb) ghb.placeholder=local;
+  if(glb) glb.placeholder=local;
+  // 左栏同步更新名称/分支标签
+  const itemName=document.querySelector('.repo[data-i="'+S.selected+'"] .repo-name');
+  if(itemName && r) itemName.innerHTML='<span class="dot '+(itemName.querySelector('.dot')?.className.split(" ")[1]||"unk")+'"></span>'+esc(r.name||"未命名");
+  const tags=document.querySelectorAll('.repo[data-i="'+S.selected+'"] .tag');
+  if(tags.length===2 && r){
+    tags[0].textContent="GH "+(r.github_branch||local);
+    tags[1].textContent="GL "+(r.gitlab_branch||local);
+  }
+  updateUrlWarn();
+}
+function syncSaveBtn(){
+  const btn=[...document.querySelectorAll("#content .actions .btn")].find(b=>b.textContent.trim()==="保存");
+  if(btn) btn.disabled=!S.dirty;
+  renderDirtyHint();
+}
+function renderDirtyHint(){
+  const el=document.querySelector("#content .actions");
+  if(!el) return;
+  let h=el.querySelector(".dirtyhint");
+  if(S.dirty){
+    if(!h){ h=document.createElement("span"); h.className="dirtyhint";
+      h.style.cssText="font-size:12.5px;color:var(--warn)"; h.textContent="有未保存的改动";
+      el.insertBefore(h, el.querySelector(".spacer")); }
+  } else if(h){ h.remove(); }
+}
+
+/* ---------------- 目标 ---------------- */
+function setTargets(which){
+  S.targets = new Set(which==="both"?["github","gitlab"]:[which]);
+  renderContent();
+}
+function toggleTarget(t,on){
+  if(on) S.targets.add(t); else S.targets.delete(t);
+  if(!S.targets.size){ S.targets.add(t==="github"?"gitlab":"github"); }
+  renderContent();
+}
+
+/* ---------------- 仓库增删 ---------------- */
+function addRepo(){
+  S.repos.push({name:"新仓库", path:"", github:"", gitlab:"", branch:"main"});
+  S.selected=S.repos.length-1; S.dirty=true;
+  renderList(); renderContent();
+  setTimeout(()=>{const el=document.getElementById("f_path"); if(el) el.focus();},30);
+}
+function delRepo(i){
+  if(!confirm("确定删除「"+((S.repos[i]||{}).name||"未命名")+"」？\n（只从清单移除，不动你的代码）")) return;
+  S.repos.splice(i,1);
+  S.selected = S.repos.length? Math.min(i, S.repos.length-1) : -1;
+  S.dirty=true;
+  saveRepos(true).then(()=>{
+    S.status={}; S.remote={};
+    S.repos.forEach((_,k)=>refreshStatus(k));
+    updateAllBtn(); toast("已移除","ok");
+  });
+}
+
+/* ---------------- 校验 ---------------- */
+function paintValidate(st){
+  const el=document.getElementById("valStrip"); if(!el) return;
+  let cls="", txt="";
+  if(!st){ return; }
+  if(st.gitMissing){ cls="err"; txt="✖ "+st.message; }
+  else if(!st.exists){ cls="err"; txt="✖ 目录不存在"; }
+  else if(!st.isGit){ cls="err"; txt="✖ 不是 git 仓库（缺 .git）"; }
+  else if(st.message && st.message.startsWith("本地无分支")){ cls="err"; txt="✖ "+st.message; }
+  else { cls=st.dirty?"warn":"ok"; txt=(st.dirty?"⚠ ":"✔ ")+st.message; }
+  el.className="validate-strip "+cls; el.textContent=txt;
+}
+
+/* ---------------- 远端状态 ---------------- */
+function renderRemote(i){
+  const r=S.remote[i];
+  if(!r) return '<div class="rm-empty">还没校验。点右上「开始校验」，会同时检查本地状态，以及 GitHub / GitLab 上该分支是否存在、最新提交是什么。</div>';
+  if(r.loading) return '<div class="rm-empty">查询中…（需要访问远端，约几秒）</div>';
+  if(!r.ok && r.error) return '<div class="rm-err">✖ '+esc(r.error)+'</div>';
+
+  const br=r.branches||{};
+  const l=r.local||{}, g=r.github||{}, b=r.gitlab||{};
+
+  function badge(x, remote){
+    if(x.error || !x.exists) return '';
+    const same = l.sha && x.sha && l.sha===x.sha;
+    return '<span class="rm-badge '+(same?'same':'diff')+'">'+(same?'与本地一致':'与本地不同')+'</span>';
+  }
+  function line(tag, cls, branch, x, remote){
+    let body;
+    if(x.error){
+      body='<div class="rm-err">✖ '+esc(x.error)+'</div>';
+    } else if(!x.exists){
+      body='<div class="rm-none">无此分支'+(remote!=='local'?'（推送时将新建）':'')+'</div>';
+    } else {
+      body='<div class="rm-sha">'+esc(x.short||'')+badge(x,remote)+'</div>';
+      if(x.subject) body+='<div class="rm-sub">'+esc(x.subject)+(x.date?'　·　'+esc(x.date):'')+'</div>';
+      else if(remote!=='local') body+='<div class="rm-sub">（本地无该提交对象，只显示 SHA）</div>';
+    }
+    if(remote!=='local' && x.url) body+='<div class="rm-url" title="'+esc(x.url)+'">'+esc(x.url)+'</div>';
+    return '<div class="rm-row"><div class="rm-tag '+cls+'">'+tag
+         + '<br><span style="font-weight:400;font-size:11px">'+esc(branch||'')+'</span></div>'
+         + '<div class="rm-body">'+body+'</div></div>';
+  }
+  const alert = r.sameRemote
+    ? '<div class="rm-alert">⚠ <b>GitHub 与 GitLab 填的是同一个地址</b>，两边其实指向同一个仓库。'
+      + '这样推送会把代码推两遍到同一个地方，真正的 GitLab 收不到东西，还会误报成功。'
+      + '请到「仓库设置」把 GitLab 地址改正。</div>'
+    : '';
+  return alert
+       + line('本地','',br.local,l,'local')
+       + line('GitHub','gh',br.github,g,'github')
+       + line('GitLab','gl',br.gitlab,b,'gitlab');
+}
+
+async function checkRemote(i){
+  const repo=S.repos[i]; if(!repo) return;
+  S.remote[i]={loading:true};
+  let box=document.getElementById("remoteBox");
+  if(box) box.innerHTML=renderRemote(i);
+  try{
+    const resp=await fetch("/api/remote-status",{method:"POST",
+      headers:{"Content-Type":"application/json"}, body:JSON.stringify(repo)});
+    S.remote[i]=await resp.json();
+  }catch(e){
+    S.remote[i]={ok:false, error:"通信失败："+e.message};
+  }
+  if(S.selected===i){
+    box=document.getElementById("remoteBox");
+    if(box) box.innerHTML=renderRemote(i);
+  }
+}
+
+async function validateNow(i){
+  const el=document.getElementById("valStrip");
+  if(el){ el.className="validate-strip"; el.textContent="校验中…"; }
+  await refreshStatus(i);
+  if(S.selected===i) paintValidate(S.status[i]);
+  updateStatusUi(i);
+  checkRemote(i);   // 顺带查一次远端
+}
+async function openDir(i){
+  const r=S.repos[i]; if(!r.path) return toast("还没填路径","err");
+  const resp=await fetch("/api/open",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({path:r.path})});
+  const d=await resp.json();
+  if(d.error) toast(d.error,"err");
+}
+
+/* ---------------- 推送 ---------------- */
+let LOG = [];   // 日志留存在内存，右栏重建时不丢
+
+function appendLog(level,text){
+  LOG.push({level, text});
+  const log=document.getElementById("log"); if(!log) return;
+  if(log.querySelector(".log-empty")) log.innerHTML="";
+  const div=document.createElement("div");
+  div.className="l-"+level;
+  div.textContent=text===""?" ":text;
+  log.appendChild(div);
+  log.scrollTop=log.scrollHeight;
+}
+function clearLog(){
+  LOG=[];
+  const l=document.getElementById("log");
+  if(l) l.innerHTML='<span class="log-empty">推送结果会显示在这里…</span>';
+}
+
+async function doPush(){
+  if(S.pushing) return;
+  if(S.dirty){ const ok=await saveRepos(true); if(!ok) return; }
+  const idxs=selectedIndexes();
+  if(!idxs.length){ toast("请先在左边选一个仓库","err"); return; }
+  if(!S.targets.size){ toast("请至少选一个推送目标","err"); return; }
+
+  const checkOnly=!!window._checkOnly;
+  S.pushing=true; clearLog();
+  const btn=document.getElementById("pushBtn");
+  btn.disabled=true; btn.textContent=checkOnly?"检查中…":"推送中…";
+  appendLog("info","→ "+idxs.length+" 个仓库："+[...S.targets].map(t=>TARGET_META[t].label).join(" + "));
+
+  try{
+    const resp=await fetch("/api/push",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({indexes:idxs, targets:[...S.targets], checkOnly})});
+    const reader=resp.body.getReader(); const dec=new TextDecoder(); let buf="";
+    while(true){
+      const {done,value}=await reader.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      const lines=buf.split("\n"); buf=lines.pop();
+      for(const ln of lines){
+        if(!ln.trim()) continue;
+        let o; try{ o=JSON.parse(ln); }catch(e){ continue; }
+        if(o.done){ appendLog(o.ok?"ok":"err", o.ok?"—— 全部完成 ✔":"—— 存在失败项 ✖");
+          toast(o.ok?"推送完成":"有失败项", o.ok?"ok":"err"); break; }
+        appendLog(o.level||"info", o.text);
+      }
+    }
+  }catch(e){ appendLog("err","✖ 通信失败："+e.message); toast("推送失败","err"); }
+  finally{
+    S.pushing=false; btn.disabled=false; btn.textContent="开始推送";
+    idxs.forEach(i=>{ delete S.status[i]; refreshStatus(i); });
+  }
+}
+
+function updateSelInfo(){
+  const el=document.getElementById("selInfo");
+  if(!el) return;
+  const r=S.repos[S.selected];
+  el.textContent = r ? ("当前： "+(r.name||"未命名")) : "";
+}
+
+/* ---------------- 拉取 ---------------- */
+async function doPull(source){
+  if(S.pushing) return;
+  if(S.dirty){ const ok=await saveRepos(true); if(!ok) return; }
+  const idxs=selectedIndexes();
+  if(!idxs.length){ toast("请先在左边选一个仓库","err"); return; }
+
+  const repo=S.repos[S.selected]||{};
+  const label=source==="github"?"GitHub":"GitLab";
+  const url=source==="github"?repo.github:repo.gitlab;
+  if(!url){ toast("这个仓库还没填 "+label+" 地址","err"); return; }
+
+  const force=!!window._force;
+  if(force && !confirm("强制覆盖本地？\n\n会丢弃本地未提交的改动、以及本地领先的提交，\n以远端版本为准。此操作不可撤销。")) return;
+
+  S.pushing=true; clearLog();
+  const btn=document.getElementById(source==="github"?"pullGh":"pullGl");
+  const oldTxt=btn?btn.textContent:"";
+  if(btn){ btn.disabled=true; btn.textContent="拉取中…"; }
+  appendLog("info","← 从 "+label+" 拉取到本地"+(force?"（强制覆盖）":""));
+
+  try{
+    const resp=await fetch("/api/pull",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({indexes:idxs, source:source, force:force})});
+    const reader=resp.body.getReader(); const dec=new TextDecoder(); let buf="";
+    while(true){
+      const {done,value}=await reader.read(); if(done) break;
+      buf+=dec.decode(value,{stream:true});
+      const lines=buf.split("\n"); buf=lines.pop();
+      for(const ln of lines){
+        if(!ln.trim()) continue;
+        let o; try{ o=JSON.parse(ln); }catch(e){ continue; }
+        if(o.done){
+          appendLog(o.ok?"ok":"err", o.ok?"—— 拉取完成 ✔":"—— 拉取失败 ✖");
+          toast(o.ok?"拉取完成":"拉取失败", o.ok?"ok":"err");
+          break;
+        }
+        appendLog(o.level||"info", o.text);
+      }
+    }
+  }catch(e){
+    appendLog("err","✖ 通信失败："+e.message); toast("拉取失败","err");
+  }finally{
+    S.pushing=false;
+    if(btn){ btn.disabled=false; btn.textContent=oldTxt; }
+    if(S.selected>=0){ delete S.status[S.selected]; refreshStatus(S.selected); checkRemote(S.selected); }
+  }
+}
+
+/* ---------------- 服务 ---------------- */
+async function shutdown(){
+  if(!confirm("关闭 git-sync 服务？\n（界面会失效，下次双击启动器即可再次打开）")) return;
+  try{ await fetch("/api/shutdown",{method:"POST"}); }catch(e){}
+  document.body.innerHTML='<div style="display:flex;height:100vh;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:#6b7a8d;font-family:system-ui"><div style="font-size:40px">✓</div><div>服务已关闭，可以关掉这个页面了</div></div>';
+}
+
+/* ---------------- 初始化 ---------------- */
+document.addEventListener("keydown",e=>{ if((e.ctrlKey||e.metaKey)&&e.key==="s"){ e.preventDefault(); if(S.dirty) saveRepos(); } });
+/* 恢复侧栏收起状态 */
+try{
+  if(localStorage.getItem("gs_side_collapsed")==="1"){
+    document.querySelector(".app").classList.add("side-collapsed");
+  }
+}catch(e){}
+
+loadState();
+</script>
+</body>
+</html>

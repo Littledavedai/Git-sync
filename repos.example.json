@@ -1,0 +1,28 @@
+{
+  "_说明": [
+    "把这个文件复制成 repos.json 后按需修改。repos.json 已在 .gitignore 中，不会被提交。",
+    "每个仓库一条。各字段说明：",
+    "  name           显示名，随便起",
+    "  path           本地仓库目录（必须含 .git）",
+    "  github         GitHub 远端地址，可留空",
+    "  gitlab         另一个远端地址（GitLab / Gitea / 任何 git 服务都行），可留空",
+    "  branch         本地要推送的分支，默认 main",
+    "  github_branch  推到 GitHub 那边叫什么分支名，不填=同 branch",
+    "  gitlab_branch  推到 gitlab 那边叫什么分支名，不填=同 branch",
+    "",
+    "顶层 no_proxy（可选）：把内网地址排除在系统代理之外，否则内网 git 服务可能连不上。",
+    "  默认已包含 127.0.0.1 / localhost / RFC1918 私有网段。",
+    "  注意：172.16.0.0/12 才是私有段，像 172.10.x.x 这类地址不在其中，需要自己加。"
+  ],
+  "no_proxy": [],
+  "repos": [
+    {
+      "name": "我的项目",
+      "path": "D:/code/my-project",
+      "github": "https://github.com/your-name/my-project.git",
+      "gitlab": "http://git.mycompany.com/group/my-project.git",
+      "branch": "main",
+      "gitlab_branch": "dev"
+    }
+  ]
+}
