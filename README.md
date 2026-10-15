@@ -48,6 +48,12 @@
 - **Git**（在 PATH 里，或装在常见位置 —— 脚本会自动探测）
 - Windows / macOS / Linux
 
+> 启动脚本会自己找 Python：PATH → `py` 启动器 → 便携版目录。它会**主动跳过 Windows 应用商店那个 0 字节的 `python.exe` 占位符**（那东西运行时什么都不做、也不报错，会让进程管理器一直卡在"启动中"）。
+> 如果你的 Python 装在很偏的地方，运行前设一下 `PYTHON` 环境变量指向它即可：
+> ```
+> set PYTHON=C:\somewhere\python.exe
+> ```
+
 > 界面基于 Python 标准库 `http.server`，只监听 `127.0.0.1`，不对外开放。
 
 ---
