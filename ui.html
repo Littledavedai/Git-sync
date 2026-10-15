@@ -641,6 +641,8 @@ const S = {
   targets: new Set(), // 推送默认不选两者
   tab: "push", // 顶层：配置 | 校验 | 推送
   logOpen: false,  // 日志默认收起
+  loadError: null, // 首次加载失败的原因（用于区分"连接不上"和"真的没有仓库"）
+  connecting: true, // 正在连接中
 };
 
 const TARGET_META = {
@@ -738,9 +740,14 @@ function gateState(i){
 }
 
 /* ---------------- 数据 ---------------- */
-async function loadState(){
+async function loadState(retries){
+  if(retries===undefined) retries=6;
   try{
-    const r=await fetch("/api/state"); const d=await r.json();
+    const r=await fetch("/api/state",{cache:"no-store"});
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    const d=await r.json();
+    if(!d || !Array.isArray(d.repos)) throw new Error("返回数据异常");
+    S.loadError=null; S.connecting=false;
     S.repos=d.repos||[];
     S.git=d.git||{};
     renderGitBanner();
@@ -748,7 +755,19 @@ async function loadState(){
     renderList(); renderContent();
     S.repos.forEach((_,i)=>refreshStatus(i));
     if(S.selected>=0) validateNow(S.selected);
-  }catch(e){ toast("加载失败："+e.message,"err"); }
+  }catch(e){
+    // 服务可能还在启动（比如刚被进程管理器拉起来），先自动重试几次
+    if(retries>0){
+      S.connecting=true; S.loadError=null;
+      renderList(); renderContent();
+      setTimeout(()=>loadState(retries-1), 1200);
+      return;
+    }
+    S.connecting=false;
+    S.loadError=(e && e.message) ? e.message : String(e);
+    renderList(); renderContent();
+    toast("无法连接到服务，请点「重试」","err");
+  }
 }
 
 function renderGitBanner(){
@@ -807,6 +826,18 @@ function updateStatusUi(i){
 /* ---------------- 渲染：左栏 ---------------- */
 function renderList(){
   const box=document.getElementById("repoList");
+  if(S.loadError){
+    box.innerHTML='<div class="empty">⚠ 连接不上服务<br>'
+      + '<span style="font-size:12px;opacity:.75">'+esc(S.loadError)+'</span><br><br>'
+      + '<button class="btn sm" onclick="retryLoad()">重试</button></div>';
+    updateAllBtn();
+    return;
+  }
+  if(S.connecting){
+    box.innerHTML='<div class="empty">正在连接服务…</div>';
+    updateAllBtn();
+    return;
+  }
   if(!S.repos.length){
     box.innerHTML='<div class="empty">还没有登记仓库<br>点下方「＋ 新增仓库」开始</div>';
     updateAllBtn();
@@ -867,7 +898,15 @@ function toggleSide(){
 
 function updateAllBtn(){
   const el=document.getElementById("repoCount");
-  if(el) el.textContent = S.repos.length ? String(S.repos.length) : "0";
+  if(!el) return;
+  // 连不上服务时显示 "—"，不要显示 0（那看起来像数据丢了）
+  el.textContent = (S.loadError || S.connecting) ? "—" : String(S.repos.length);
+}
+
+function retryLoad(){
+  S.connecting=true; S.loadError=null;
+  renderList(); renderContent();
+  loadState();
 }
 
 function setTab(tab){
@@ -937,6 +976,22 @@ function renderContent(){
   const c=document.getElementById("content");
   const i=S.selected;
   if(i<0 || !S.repos[i]){
+    if(S.loadError){
+      c.innerHTML=`<div class="center-empty">
+        <div class="ico">⚠</div>
+        <div>连接不上服务，读不到仓库清单<br>
+        <span style="font-size:12px;opacity:.75">${esc(S.loadError)}</span><br><br>
+        <button class="btn" onclick="retryLoad()">重试连接</button></div>
+      </div>`;
+      return;
+    }
+    if(S.connecting){
+      c.innerHTML=`<div class="center-empty">
+        <div class="ico">◌</div>
+        <div>正在连接服务…</div>
+      </div>`;
+      return;
+    }
     c.innerHTML=`<div class="center-empty">
       <div class="ico">📦</div>
       <div>从左边选择一个仓库<br>或点「＋ 新增仓库」</div>
